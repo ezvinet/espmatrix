@@ -1,589 +1,431 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8" />
-<title>Dual 8x8 LED Matrix Controller with ESP8266</title>
-<style>
-  body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #fafafa; }
-  h1 { text-align: center; color: #222; }
-  .matrix-container { display: flex; justify-content: space-around; margin: 20px 0; }
-  canvas { border: 1px solid #aaa; display: block; margin: 10px auto; cursor: crosshair; background: #111; }
-  .controls, .frameList, .device { background: white; padding: 15px; border-radius: 8px; margin: 15px 0; box-shadow: 0 0 8px #ddd; }
-  button { margin: 5px 3px 5px 0; padding: 6px 12px; cursor: pointer; border: none; border-radius: 4px; background: #007bff; color: white; font-weight: 600; }
-  button:hover { background: #0056b3; }
-  input[type=color] { width: 50px; height: 30px; vertical-align: middle; border-radius: 4px; border: 1px solid #ccc; }
-  input[type=number], input[type=text] { padding: 6px; width: 80px; border-radius: 4px; border: 1px solid #ccc; }
-  label { margin-right: 10px; font-weight: 600; }
-  #frames { list-style: none; padding-left: 0; max-height: 180px; overflow-y: auto; }
-  #frames li { background: #f5f5f5; margin-bottom: 5px; padding: 8px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; font-family: monospace; }
-  #frames li span { flex-grow: 1; }
-  #status { text-align: center; padding: 10px; font-weight: bold; background: #eee; border-radius: 5px; margin-top: 15px; color: #333; }
-  .grid-buttons { text-align: center; margin-top: 10px; }
-  select { padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
-  .device-control { display: flex; justify-content: space-between; margin-bottom: 10px; }
-  .device-control > div { flex: 1; padding: 0 10px; }
-</style>
+  <meta charset="UTF-8">
+  <title>9×6 Pixel-Ring Scheduler – 40 px Edition (TXT Save)</title>
+  <style>
+    :root {
+      --bg: #0f0f23;
+      --led-off: #222;
+      --led-on: #0f0;
+      --font: "Courier New", monospace;
+      --size: 40px;
+    }
+
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--led-on);
+      text-align: center;
+      padding: 20px;
+    }
+
+    #ledRing {
+      position: relative;
+      width: 600px;
+      height: 600px;
+      margin: 20px auto;
+      image-rendering: pixelated;
+    }
+
+    .led {
+      position: absolute;
+      width: var(--size);
+      height: var(--size);
+      background: var(--led-off);
+      border: 2px solid #000;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    @keyframes pump {
+      50% { transform: scale(1.15); }
+    }
+
+    .led.on {
+      background: var(--led-on);
+      animation: pump 0.2s ease;
+    }
+
+    button, input {
+      margin: 8px;
+      padding: 4px 8px;
+      font-family: var(--font);
+      background: #111;
+      color: var(--led-on);
+      border: 1px solid var(--led-on);
+    }
+
+    button:hover {
+      background: var(--led-on);
+      color: #000;
+    }
+
+    #outputWrapper {
+      position: relative;
+      max-width: 500px;
+      margin: 20px auto;
+    }
+
+    #lastLine {
+      background: #111;
+      color: var(--led-on);
+      padding: 4px 8px;
+      font-family: var(--font);
+      text-align: left;
+      font-size: 14px;
+      white-space: pre;
+      border: 1px solid #000;
+    }
+
+    #fullOutput {
+      display: none;
+      background: #111;
+      color: var(--led-on);
+      padding: 10px;
+      overflow-x: auto;
+      border: 1px solid #000;
+      margin-top: 4px;
+    }
+
+    #pwBox { margin: 8px; }
+  </style>
 </head>
+
 <body>
+  <h2>9×6 Pixel-Ring Scheduler – 40 px Edition (TXT Save)</h2>
 
-<h1>Dual 8x8 LED Matrix Controller for ESP8266</h1>
+  <!-- ====== Controls ====== -->
+  <button onclick="addDuration()">➕ Add Duration</button>
+  <button onclick="undoLast()">⏪ Undo Last Duration</button>
+  <button onclick="backDuration()">🡐 Back Duration</button>
+  <button onclick="backDurationSave()">🔙 Back Duration Save</button>
+  <button onclick="goLastDuration()">➡️ Go Last Duration</button>
+  <button onclick="changeBaseTime()">⚙️ Change Base-Time (ms)</button>
+  <button onclick="moveColors(true)">➡️ Rotate CW</button>
+  <button onclick="moveColors(false)">⤴︎ Rotate CCW</button>
+  <button onclick="rotateLineByLine(true)">🔃 Rotate CW (Line-by-Line)</button>
+  <button onclick="rotateLineByLine(false)">🔄 Rotate CCW (Line-by-Line)</button>
+  <button onclick="clearAllColors()">🧹 Clear All Colors</button>
+  <button onclick="repeatPattern()">🔁 Repeat Pattern</button>
+  <button onclick="previewAnimation()">🔄 Animate Preview</button>
+  <button onclick="saveSchedule()">💾 Save Schedule (txt)</button>
 
-<div class="controls">
-  <label>Color: <input type="color" id="colorPicker" value="#ff0000"></label>
-  <button id="clearBtn">Clear</button>
-  <button id="randomBtn">Random</button>
-  <button id="invertBtn">Invert</button>
-  <select id="presetSelect">
-    <option value="">Presets...</option>
-    <option value="checker">Checkerboard</option>
-    <option value="cross">Cross</option>
-    <option value="border">Border</option>
-    <option value="heart">Heart</option>
-  </select>
-</div>
+  <!-- NEW COLUMN SHIFT BUTTONS -->
+  <button onclick="shiftColUp()">🔼 Shift Col ↑</button>
+  <button onclick="shiftColDown()">🔽 Shift Col ↓</button>
 
-<div class="matrix-container">
-  <div>
-    <h3>Matrix 1</h3>
-    <canvas id="matrix1" width="160" height="160" title="Click cells to color"></canvas>
-  </div>
-  <div>
-    <h3>Matrix 2</h3>
-    <canvas id="matrix2" width="160" height="160" title="Click cells to color"></canvas>
-  </div>
-</div>
+  <input type="file" onchange="loadSchedule(this)" accept=".txt" style="margin:0 8px;">
+  <input type="file" id="folderInput" multiple accept=".txt" onchange="loadFolderLoop(this)" style="display:none">
+  <button onclick="document.getElementById('folderInput').click()">📁 Load Folder (Loop)</button>
 
-<div class="grid-buttons">
-  <label>Frame Delay (ms): <input type="number" id="delayInput" min="10" max="5000" value="200"></label>
-  <button id="addFrameBtn">Add Frame</button>
-  <button id="playPreviewBtn">Play Preview</button>
-  <button id="stopPreviewBtn">Stop Preview</button>
-  <button id="sendFrameBtn">Send Frame</button>
-</div>
+  <div id="ledRing"></div>
 
-<div class="frameList">
-  <h3>Frames:</h3>
-  <ul id="frames"></ul>
-  <div>
-    <button id="moveUpBtn">Move Up</button>
-    <button id="moveDownBtn">Move Down</button>
-    <button id="duplicateBtn">Duplicate</button>
-    <button id="reverseBtn">Reverse</button>
-    <button id="deleteBtn">Delete</button>
-  </div>
-</div>
+  <label>Pick Colour: <input type="color" id="colorPicker" value="#00ff00"></label><br>
+  <label>ON Duration (ms): <input type="number" id="duration" value="5000" min="100"></label><br>
 
-<div class="device">
-  <h3>ESP8266 Device Control</h3>
-  <div class="device-control">
-    <div>
-      <label>Matrix 1 IP: <input type="text" id="espIp1" value="192.168.1.100"></label>
-      <button id="testConnectionBtn1">Test Connection</button>
+  <!-- ====== Password-protected output ====== -->
+  <div id="outputWrapper">
+    <div id="lastLine"></div>
+    <div id="pwBox">
+      <input id="password" type="password" placeholder="Enter password" />
+      <button onclick="unlockOutput()">Unlock</button>
     </div>
-    <div>
-      <label>Matrix 2 IP: <input type="text" id="espIp2" value="192.168.1.101"></label>
-      <button id="testConnectionBtn2">Test Connection</button>
-    </div>
+    <pre id="fullOutput"></pre>
   </div>
-  <div style="text-align: center; margin-top: 10px;">
-    <button id="sendAnimationBtn">Send Animation to Both</button>
-    <button id="stopAnimationBtn">Stop Animation</button>
-    <button id="clearMatrixBtn">Clear Both Matrices</button>
-    <label>Brightness: <input type="range" id="brightness" min="1" max="255" value="100"></label>
-  </div>
-</div>
 
-<div>
-  <button id="saveBtn">Save Animation</button>
-  <input type="file" id="loadFile" accept=".json" style="display:none" />
-  <button id="loadBtn">Load Animation</button>
-  <button id="undoBtn">Undo</button>
-  <button id="redoBtn">Redo</button>
-  <button id="toggleGridBtn">Toggle Grid</button>
-</div>
+  <script>
+    const rays = 9;
+    const ledsPerRay = 6;
+    const radiusStep = 50;
+    const centerX = 300;
+    const centerY = 300;
+    const totalLEDs = rays * ledsPerRay;
+    let baseTime = 60000;
+    let currentTime = baseTime;
+    let schedule = [];
+    const prevStates = [];
+    const colorHistory = [];
+    const timeHistory = [];
 
-<div id="status">Ready.</div>
+    const ledRing = document.getElementById('ledRing');
+    const colorPicker = document.getElementById('colorPicker');
+    const leds = [];
 
-<script>
-(() => {
-  // Initialize variables
-  const canvas1 = document.getElementById('matrix1');
-  const ctx1 = canvas1.getContext('2d');
-  const canvas2 = document.getElementById('matrix2');
-  const ctx2 = canvas2.getContext('2d');
-  const gridSize = 8;
-  const cellSize = 20;
-  let grid1 = new Array(gridSize * gridSize).fill("#000000");
-  let grid2 = new Array(gridSize * gridSize).fill("#000000");
-  let currentColor = document.getElementById('colorPicker').value;
-  let frames = [];
-  let selectedFrameIndex = -1;
-  let previewTimer = null;
-  let previewIndex = 0;
-  let history = [{grid1: [...grid1], grid2: [...grid2]}];
-  let historyIndex = 0;
-  let showGrid = true;
-  let activeCanvas = 'matrix1'; // Track which matrix is being edited
+    const mapIndex = (i) => (i + totalLEDs - 18) % totalLEDs;
 
-  // Initialize grid drawing
-  function drawGrid() {
-    ctx1.clearRect(0, 0, canvas1.width, canvas1.height);
-    ctx2.clearRect(0, 0, canvas2.width, canvas2.height);
-    
-    for(let y=0; y<gridSize; y++) {
-      for(let x=0; x<gridSize; x++) {
-        const idx = y * gridSize + x;
-        
-        // Draw matrix 1
-        ctx1.fillStyle = grid1[idx];
-        ctx1.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
-        ctx1.strokeStyle = showGrid ? "#444" : "transparent";
-        ctx1.strokeRect(x*cellSize, y*cellSize, cellSize, cellSize);
-        
-        // Draw matrix 2
-        ctx2.fillStyle = grid2[idx];
-        ctx2.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
-        ctx2.strokeStyle = showGrid ? "#444" : "transparent";
-        ctx2.strokeRect(x*cellSize, y*cellSize, cellSize, cellSize);
+    /* ---------- LED creation ---------- */
+    for (let r = 0; r < rays; r++) {
+      const angle = (r / rays) * 2 * Math.PI;
+      for (let i = 0; i < ledsPerRay; i++) {
+        const originalIndex = i + (r * ledsPerRay);
+        const index = mapIndex(originalIndex);
+        const radius = radiusStep * (i + 1);
+        const x = centerX + radius * Math.cos(angle) - 20;
+        const y = centerY + radius * Math.sin(angle) - 20;
+
+        const led = document.createElement('div');
+        led.className = 'led';
+        led.style.left = `${x}px`;
+        led.style.top = `${y}px`;
+        led.dataset.index = index;
+        led.dataset.color = '';
+
+        led.onclick = () => {
+          const hex = colorPicker.value;
+          led.style.backgroundColor = hex;
+          led.dataset.color = hex;
+          led.classList.add('on');
+          setTimeout(() => led.classList.remove('on'), 200);
+        };
+
+        leds.push(led);
+        ledRing.appendChild(led);
       }
     }
-    
-    // Highlight active canvas
-    canvas1.style.border = activeCanvas === 'matrix1' ? '2px solid #007bff' : '1px solid #aaa';
-    canvas2.style.border = activeCanvas === 'matrix2' ? '2px solid #007bff' : '1px solid #aaa';
-  }
 
-  // Save current state to history
-  function saveState() {
-    history = history.slice(0, historyIndex + 1);
-    history.push({grid1: [...grid1], grid2: [...grid2]});
-    historyIndex++;
-  }
+    /* ---------- core helpers ---------- */
+    function renderOutput() {
+      const outLines = schedule.map(e => `${e.led},${e.start},${e.end},${e.color}`);
+      const fullText = `# total duration ${currentTime - baseTime} ms\n${outLines.join('\n')}`;
+      document.getElementById('fullOutput').textContent = fullText;
 
-  // Mouse interaction handlers
-  function getCellFromMouse(e, canvas) {
-    const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / cellSize);
-    const y = Math.floor((e.clientY - rect.top) / cellSize);
-    if(x >= 0 && x < gridSize && y >= 0 && y < gridSize) return y * gridSize + x;
-    return -1;
-  }
+      const last = schedule[schedule.length - 1];
+      document.getElementById('lastLine').textContent = last ? `*,*,${last.end},*` : '(hidden)';
+    }
 
-  let drawing = false;
-  
-  function setupCanvasEvents(canvas, gridRef) {
-    canvas.addEventListener('mousedown', e => {
-      activeCanvas = canvas.id;
-      drawing = true;
-      const idx = getCellFromMouse(e, canvas);
-      if(idx !== -1) {
-        saveState();
-        gridRef[idx] = currentColor;
-        drawGrid();
+    function changeBaseTime() {
+      const newBase = prompt('Enter new base-time in milliseconds (current: ' + baseTime + '):');
+      if (newBase === null) return;
+      const n = parseInt(newBase, 10);
+      if (isNaN(n) || n < 0) { alert('Valid positive number required'); return; }
+      const delta = n - baseTime;
+      schedule.forEach(e => { e.start += delta; e.end += delta; });
+      baseTime = n; currentTime += delta;
+      renderOutput();
+    }
+
+    function addDuration(pushHistory = true) {
+      const duration = parseInt(document.getElementById('duration').value);
+      const endTime = currentTime + duration;
+      const newEntries = [];
+      const currentColors = leds.map(led => led.dataset.color || '');
+
+      if (pushHistory) {
+        colorHistory.push(currentColors);
+        timeHistory.push(currentTime);
       }
-    });
 
-    canvas.addEventListener('mousemove', e => {
-      if(!drawing || canvas.id !== activeCanvas) return;
-      const idx = getCellFromMouse(e, canvas);
-      if(idx !== -1) {
-        gridRef[idx] = currentColor;
-        drawGrid();
+      leds.forEach((led) => {
+        const color = led.dataset.color;
+        if (color && color !== '') {
+          const hex = color.replace('#', '').toLowerCase();
+          newEntries.push({
+            led: parseInt(led.dataset.index),
+            start: currentTime,
+            end: endTime,
+            color: hex
+          });
+        }
+      });
+
+      if (newEntries.length > 0) {
+        prevStates.push([...schedule]);
+        schedule.push(...newEntries);
+        currentTime = endTime;
+        renderOutput();
       }
-    });
-
-    canvas.addEventListener('mouseup', e => drawing = false);
-    canvas.addEventListener('mouseleave', e => drawing = false);
-  }
-
-  setupCanvasEvents(canvas1, grid1);
-  setupCanvasEvents(canvas2, grid2);
-
-  // Touch support for mobile devices
-  function handleTouch(e, canvas) {
-    e.preventDefault();
-    const touch = e.touches[0];
-    const mouseEvent = new MouseEvent(
-      e.type === 'touchstart' ? 'mousedown' : 'mousemove',
-      { clientX: touch.clientX, clientY: touch.clientY }
-    );
-    canvas.dispatchEvent(mouseEvent);
-  }
-  
-  canvas1.addEventListener('touchstart', (e) => handleTouch(e, canvas1));
-  canvas1.addEventListener('touchmove', (e) => handleTouch(e, canvas1));
-  canvas2.addEventListener('touchstart', (e) => handleTouch(e, canvas2));
-  canvas2.addEventListener('touchmove', (e) => handleTouch(e, canvas2));
-
-  // Color picker and grid manipulation
-  document.getElementById('colorPicker').addEventListener('input', e => {
-    currentColor = e.target.value;
-  });
-
-  document.getElementById('clearBtn').addEventListener('click', () => {
-    saveState();
-    if(activeCanvas === 'matrix1') grid1.fill("#000000");
-    else grid2.fill("#000000");
-    drawGrid();
-  });
-
-  document.getElementById('randomBtn').addEventListener('click', () => {
-    saveState();
-    const grid = activeCanvas === 'matrix1' ? grid1 : grid2;
-    for(let i=0; i<grid.length; i++) {
-      grid[i] = '#' + Math.floor(Math.random()*0xFFFFFF).toString(16).padStart(6,'0');
     }
-    drawGrid();
-  });
 
-  document.getElementById('invertBtn').addEventListener('click', () => {
-    saveState();
-    const grid = activeCanvas === 'matrix1' ? grid1 : grid2;
-    for(let i=0; i<grid.length; i++) {
-      const c = grid[i];
-      let r = 255 - parseInt(c.slice(1,3),16);
-      let g = 255 - parseInt(c.slice(3,5),16);
-      let b = 255 - parseInt(c.slice(5,7),16);
-      grid[i] = `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+    function backDuration() {
+      if (colorHistory.length === 0 || timeHistory.length === 0) return;
+      const lastColors = colorHistory.pop();
+      currentTime = timeHistory.pop();
+      leds.forEach((led, i) => {
+        led.dataset.color = lastColors[i];
+        led.style.backgroundColor = lastColors[i] || 'var(--led-off)';
+      });
+      renderOutput();
     }
-    drawGrid();
-  });
 
-  // Preset patterns
-  document.getElementById('presetSelect').addEventListener('change', (e) => {
-    const pattern = e.target.value;
-    if(!pattern) return;
-    saveState();
-    
-    const grid = activeCanvas === 'matrix1' ? grid1 : grid2;
-    
-    switch(pattern) {
-      case 'checker':
-        for(let i=0; i<grid.length; i++) {
-          grid[i] = (Math.floor(i/8)+i)%2 ? '#FF0000' : '#000000';
+    function backDurationSave() {
+      if (colorHistory.length === 0 || timeHistory.length === 0) return;
+      backDuration();
+      const startTimeToRemove = currentTime;
+      const currentColors = leds.map(led => led.dataset.color || '');
+      const originalBlock = schedule.filter(e => e.start === startTimeToRemove);
+      const modified = originalBlock.some(e => {
+        const current = currentColors[e.led]?.replace('#', '').toLowerCase() || '';
+        return current !== e.color;
+      });
+      if (!modified) { console.log("No color changes to save."); return; }
+      schedule = schedule.filter(e => e.start !== startTimeToRemove);
+      addDuration(false);
+    }
+
+    function goLastDuration() {
+      if (!schedule.length) return;
+      const lastEnd = Math.max(...schedule.map(e => e.end));
+      const startOfLastBlock = Math.max(...schedule.map(e => e.start));
+      currentTime = lastEnd;
+      const currentColors = leds.map(led => led.dataset.color || '');
+      colorHistory.push(currentColors);
+      timeHistory.push(startOfLastBlock);
+      clearAllColors();
+      schedule.filter(e => e.start === startOfLastBlock).forEach(e=>{
+        const led=leds.find(l=>+l.dataset.index===e.led);
+        if(led){led.dataset.color=`#${e.color}`;led.style.backgroundColor=`#${e.color}`;}
+      });
+      renderOutput();
+    }
+
+    function undoLast() {
+      if (prevStates.length > 0) { schedule = prevStates.pop(); renderOutput(); }
+    }
+
+    function clearAllColors() {
+      leds.forEach(led => { led.dataset.color = ''; led.style.backgroundColor = 'var(--led-off)'; });
+    }
+
+    function moveColors(dir = true) {
+      const colors = leds.map(l => l.dataset.color || '');
+      const bgs = leds.map(l => l.style.backgroundColor);
+      if (dir) { colors.unshift(colors.pop()); bgs.unshift(bgs.pop()); }
+      else     { colors.push(colors.shift());  bgs.push(bgs.shift());  }
+      colors.forEach((c, i) => { leds[i].dataset.color = c; leds[i].style.backgroundColor = bgs[i]; });
+    }
+
+    function rotateLineByLine(dir = true) {
+      for (let i = 0; i < ledsPerRay; i++) {
+        const lineLEDs = [], lineBGs = [];
+        for (let r = 0; r < rays; r++) {
+          const idx = mapIndex(i + r * ledsPerRay);
+          lineLEDs.push(leds[idx].dataset.color || '');
+          lineBGs.push(leds[idx].style.backgroundColor);
         }
-        break;
-      case 'cross':
-        for(let i=0; i<grid.length; i++) {
-          const x = i%8, y = Math.floor(i/8);
-          grid[i] = (x === y || x === 7-y) ? '#00FF00' : '#000000';
+        if (dir) { lineLEDs.unshift(lineLEDs.pop()); lineBGs.unshift(lineBGs.pop()); }
+        else     { lineLEDs.push(lineLEDs.shift());  lineBGs.push(lineBGs.shift());  }
+        for (let r = 0; r < rays; r++) {
+          const idx = mapIndex(i + r * ledsPerRay);
+          leds[idx].dataset.color = lineLEDs[r];
+          leds[idx].style.backgroundColor = lineBGs[r];
         }
-        break;
-      case 'border':
-        for(let i=0; i<grid.length; i++) {
-          const x = i%8, y = Math.floor(i/8);
-          grid[i] = (x === 0 || x === 7 || y === 0 || y === 7) ? '#0000FF' : '#000000';
-        }
-        break;
-      case 'heart':
-        const heartPattern = [
-          0,0,0,0,0,0,0,0,
-          0,1,1,0,0,1,1,0,
-          1,1,1,1,1,1,1,1,
-          1,1,1,1,1,1,1,1,
-          0,1,1,1,1,1,1,0,
-          0,0,1,1,1,1,0,0,
-          0,0,0,1,1,0,0,0,
-          0,0,0,0,0,0,0,0
-        ];
-        for(let i=0; i<grid.length; i++) {
-          grid[i] = heartPattern[i] ? '#FF0000' : '#000000';
-        }
-        break;
-    }
-    drawGrid();
-    e.target.value = '';
-  });
-
-  // Frame management
-  const frameList = document.getElementById('frames');
-  function updateFrameList() {
-    frameList.innerHTML = '';
-    frames.forEach((f, i) => {
-      const li = document.createElement('li');
-      li.innerHTML = `<span>Frame ${i+1} (Delay: ${f.delay}ms)</span>`;
-      li.style.cursor = 'pointer';
-      li.style.backgroundColor = (i === selectedFrameIndex) ? '#d0e6ff' : '';
-      li.onclick = () => loadFrame(i);
-      frameList.appendChild(li);
-    });
-  }
-
-  document.getElementById('addFrameBtn').addEventListener('click', () => {
-    const delay = parseInt(document.getElementById('delayInput').value) || 200;
-    frames.push({
-      delay,
-      colors1: [...grid1],
-      colors2: [...grid2]
-    });
-    selectedFrameIndex = frames.length - 1;
-    updateFrameList();
-    setStatus(`Added frame ${frames.length} with delay ${delay}ms`);
-  });
-
-  function loadFrame(i) {
-    if(i < 0 || i >= frames.length) return;
-    grid1 = [...frames[i].colors1];
-    grid2 = [...frames[i].colors2];
-    document.getElementById('delayInput').value = frames[i].delay;
-    selectedFrameIndex = i;
-    drawGrid();
-    updateFrameList();
-    setStatus(`Loaded frame ${i+1}`);
-  }
-
-  document.getElementById('deleteBtn').addEventListener('click', () => {
-    if(selectedFrameIndex < 0) return;
-    frames.splice(selectedFrameIndex, 1);
-    if(selectedFrameIndex >= frames.length) selectedFrameIndex = frames.length - 1;
-    if(selectedFrameIndex >= 0) loadFrame(selectedFrameIndex);
-    else {
-      grid1.fill("#000000");
-      grid2.fill("#000000");
-      drawGrid();
-      updateFrameList();
-      setStatus('All frames deleted');
-    }
-  });
-
-  document.getElementById('duplicateBtn').addEventListener('click', () => {
-    if(selectedFrameIndex < 0) return;
-    const copy = JSON.parse(JSON.stringify(frames[selectedFrameIndex]));
-    frames.splice(selectedFrameIndex + 1, 0, copy);
-    updateFrameList();
-    setStatus(`Duplicated frame ${selectedFrameIndex + 1}`);
-  });
-
-  document.getElementById('moveUpBtn').addEventListener('click', () => {
-    if(selectedFrameIndex <= 0) return;
-    [frames[selectedFrameIndex-1], frames[selectedFrameIndex]] = [frames[selectedFrameIndex], frames[selectedFrameIndex-1]];
-    selectedFrameIndex--;
-    updateFrameList();
-    loadFrame(selectedFrameIndex);
-  });
-
-  document.getElementById('moveDownBtn').addEventListener('click', () => {
-    if(selectedFrameIndex < 0 || selectedFrameIndex >= frames.length - 1) return;
-    [frames[selectedFrameIndex], frames[selectedFrameIndex+1]] = [frames[selectedFrameIndex+1], frames[selectedFrameIndex]];
-    selectedFrameIndex++;
-    updateFrameList();
-    loadFrame(selectedFrameIndex);
-  });
-
-  document.getElementById('reverseBtn').addEventListener('click', () => {
-    frames.reverse();
-    updateFrameList();
-    setStatus('Reversed animation');
-  });
-
-  // Animation preview
-  document.getElementById('playPreviewBtn').addEventListener('click', () => {
-    if(frames.length === 0) return;
-    if(previewTimer) clearInterval(previewTimer);
-    previewIndex = 0;
-    previewTimer = setInterval(() => {
-      loadFrame(previewIndex);
-      previewIndex = (previewIndex + 1) % frames.length;
-    }, frames[previewIndex].delay);
-    setStatus('Preview started');
-  });
-
-  document.getElementById('stopPreviewBtn').addEventListener('click', () => {
-    if(previewTimer) {
-      clearInterval(previewTimer);
-      previewTimer = null;
-      setStatus('Preview stopped');
-      if(selectedFrameIndex >= 0) loadFrame(selectedFrameIndex);
-      else drawGrid();
-    }
-  });
-
-  // Undo/Redo functionality
-  document.getElementById('undoBtn').addEventListener('click', () => {
-    if(historyIndex > 0) {
-      historyIndex--;
-      grid1 = [...history[historyIndex].grid1];
-      grid2 = [...history[historyIndex].grid2];
-      drawGrid();
-    }
-  });
-
-  document.getElementById('redoBtn').addEventListener('click', () => {
-    if(historyIndex < history.length - 1) {
-      historyIndex++;
-      grid1 = [...history[historyIndex].grid1];
-      grid2 = [...history[historyIndex].grid2];
-      drawGrid();
-    }
-  });
-
-  // Toggle grid visibility
-  document.getElementById('toggleGridBtn').addEventListener('click', () => {
-    showGrid = !showGrid;
-    drawGrid();
-  });
-
-  // ESP8266 communication
-  function gridToESPFormat(colors) {
-    return colors.map(c => {
-      const r = parseInt(c.slice(1,3),16);
-      const g = parseInt(c.slice(3,5),16);
-      const b = parseInt(c.slice(5,7),16);
-      return `${r},${g},${b}`;
-    }).join(';');
-  }
-
-  async function sendESPCommand(ip, command, data=null) {
-    if(!ip) {
-      setStatus('Please enter ESP IP address');
-      return false;
-    }
-    let url = `http://${ip}/${command}`;
-    if(data) url += `?data=${encodeURIComponent(data)}`;
-    try {
-      const res = await fetch(url);
-      const text = await res.text();
-      setStatus(`ESP ${ip} Response: ${text}`);
-      return true;
-    } catch(e) {
-      setStatus(`Error (${ip}): ${e.message}`);
-      return false;
-    }
-  }
-
-  document.getElementById('sendFrameBtn').addEventListener('click', async () => {
-    const ip1 = document.getElementById('espIp1').value.trim();
-    const ip2 = document.getElementById('espIp2').value.trim();
-    
-    if(selectedFrameIndex >= 0 && frames[selectedFrameIndex]) {
-      const espData1 = gridToESPFormat(frames[selectedFrameIndex].colors1);
-      const espData2 = gridToESPFormat(frames[selectedFrameIndex].colors2);
-      await Promise.all([
-        sendESPCommand(ip1, 'setFrame', espData1),
-        sendESPCommand(ip2, 'setFrame', espData2)
-      ]);
-    } else {
-      const espData1 = gridToESPFormat(grid1);
-      const espData2 = gridToESPFormat(grid2);
-      await Promise.all([
-        sendESPCommand(ip1, 'setFrame', espData1),
-        sendESPCommand(ip2, 'setFrame', espData2)
-      ]);
-    }
-  });
-
-  document.getElementById('testConnectionBtn1').addEventListener('click', async () => {
-    const ip = document.getElementById('espIp1').value.trim();
-    await sendESPCommand(ip, 'ping');
-  });
-
-  document.getElementById('testConnectionBtn2').addEventListener('click', async () => {
-    const ip = document.getElementById('espIp2').value.trim();
-    await sendESPCommand(ip, 'ping');
-  });
-
-  document.getElementById('sendAnimationBtn').addEventListener('click', async () => {
-    if(frames.length === 0) return;
-    
-    const ip1 = document.getElementById('espIp1').value.trim();
-    const ip2 = document.getElementById('espIp2').value.trim();
-    
-    const animation1 = frames.map(f => ({
-      delay: f.delay,
-      colors: gridToESPFormat(f.colors1)
-    }));
-    
-    const animation2 = frames.map(f => ({
-      delay: f.delay,
-      colors: gridToESPFormat(f.colors2)
-    }));
-    
-    await Promise.all([
-      sendESPCommand(ip1, 'setAnimation', JSON.stringify(animation1)),
-      sendESPCommand(ip2, 'setAnimation', JSON.stringify(animation2))
-    ]);
-    
-    await Promise.all([
-      sendESPCommand(ip1, 'startAnimation'),
-      sendESPCommand(ip2, 'startAnimation')
-    ]);
-  });
-
-  document.getElementById('stopAnimationBtn').addEventListener('click', async () => {
-    const ip1 = document.getElementById('espIp1').value.trim();
-    const ip2 = document.getElementById('espIp2').value.trim();
-    await Promise.all([
-      sendESPCommand(ip1, 'stopAnimation'),
-      sendESPCommand(ip2, 'stopAnimation')
-    ]);
-  });
-
-  document.getElementById('clearMatrixBtn').addEventListener('click', async () => {
-    const ip1 = document.getElementById('espIp1').value.trim();
-    const ip2 = document.getElementById('espIp2').value.trim();
-    await Promise.all([
-      sendESPCommand(ip1, 'clear'),
-      sendESPCommand(ip2, 'clear')
-    ]);
-  });
-
-  document.getElementById('brightness').addEventListener('input', async e => {
-    const ip1 = document.getElementById('espIp1').value.trim();
-    const ip2 = document.getElementById('espIp2').value.trim();
-    await Promise.all([
-      sendESPCommand(ip1, 'setBrightness', e.target.value),
-      sendESPCommand(ip2, 'setBrightness', e.target.value)
-    ]);
-  });
-
-  // Save/Load functionality
-  document.getElementById('saveBtn').addEventListener('click', () => {
-    if(frames.length === 0) return;
-    const data = {
-      frames: frames,
-      created: new Date().toISOString(),
-      version: "1.0"
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `led_animation_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    setStatus('Animation saved to file');
-  });
-
-  document.getElementById('loadBtn').addEventListener('click', () => {
-    document.getElementById('loadFile').click();
-  });
-
-  document.getElementById('loadFile').addEventListener('change', e => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = evt => {
-      try {
-        const json = JSON.parse(evt.target.result);
-        if(!json.frames || !Array.isArray(json.frames)) throw new Error('Invalid file');
-        frames = json.frames;
-        if(frames.length > 0) loadFrame(0);
-        updateFrameList();
-        setStatus(`Loaded ${frames.length} frames`);
-      } catch(err) {
-        setStatus('Error loading file: ' + err.message);
       }
-    };
-    reader.readAsText(file);
-  });
+    }
 
-  // Status message helper
-  function setStatus(msg) {
-    document.getElementById('status').textContent = msg;
-  }
+    /* ---------- NEW COLUMN SHIFT HELPERS ---------- */
+    function shiftColUp()   { shiftCol(true);  }
+    function shiftColDown() { shiftCol(false); }
 
-  // Initialize
-  drawGrid();
-  setStatus('Ready.');
-})();
-</script>
+    function shiftCol(up = true) {
+      // one column = one ray => 6 LEDs
+      for (let r = 0; r < rays; r++) {
+        const colLEDs = [], colBGs = [];
+        for (let i = 0; i < ledsPerRay; i++) {
+          const idx = mapIndex(i + r * ledsPerRay);
+          colLEDs.push(leds[idx].dataset.color || '');
+          colBGs.push(leds[idx].style.backgroundColor);
+        }
+        if (up) { colLEDs.push(colLEDs.shift());  colBGs.push(colBGs.shift());  }   // up
+        else    { colLEDs.unshift(colLEDs.pop()); colBGs.unshift(colBGs.pop()); }   // down
+        for (let i = 0; i < ledsPerRay; i++) {
+          const idx = mapIndex(i + r * ledsPerRay);
+          leds[idx].dataset.color = colLEDs[i];
+          leds[idx].style.backgroundColor = colBGs[i];
+        }
+      }
+    }
+
+    /* ---------- schedule helpers ---------- */
+    function repeatPattern() {
+      const previous = schedule.filter(e => e.start >= baseTime);
+      if (previous.length === 0) return;
+      const delta = currentTime - baseTime;
+      const repeated = previous.map(e => ({
+        led: e.led,
+        start: e.start + delta,
+        end: e.end + delta,
+        color: e.color
+      }));
+      prevStates.push([...schedule]);
+      schedule.push(...repeated);
+      currentTime += delta;
+      renderOutput();
+    }
+
+    function previewAnimation() {
+      const ledsMap = {};
+      schedule.forEach(e => {
+        if (!ledsMap[e.start]) ledsMap[e.start] = [];
+        ledsMap[e.start].push(e);
+      });
+      const times = Object.keys(ledsMap).map(t => parseInt(t)).sort((a, b) => a - b);
+      function applyFrame(i) {
+        if (i >= times.length) return;
+        clearAllColors();
+        ledsMap[times[i]].forEach(e => {
+          const led = leds.find(l => parseInt(l.dataset.index) === e.led);
+          if (led) {
+            led.style.backgroundColor = `#${e.color}`;
+            led.dataset.color = `#${e.color}`;
+          }
+        });
+        setTimeout(() => applyFrame(i + 1), 500);
+      }
+      applyFrame(0);
+    }
+
+    /* ---------- TEXT SAVE ---------- */
+    function saveSchedule () {
+      const lines  = schedule.map(e => `${e.led},${e.start},${e.end},${e.color}`);
+      const text   = `# total duration ${currentTime - baseTime} ms\n${lines.join('\n')}`;
+      downloadText(text, 'schedules.txt');
+    }
+
+    function downloadText (content, filename) {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const a    = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+    }
+
+    function loadSchedule(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const lines = e.target.result.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+        schedule = [];
+        currentTime = baseTime;
+        lines.forEach(line => {
+          const [led, start, end, color] = line.split(',');
+          schedule.push({ led: parseInt(led), start: parseInt(start), end: parseInt(end), color });
+          currentTime = Math.max(currentTime, parseInt(end));
+        });
+        renderOutput();
+      };
+      reader.readAsText(file);
+    }
+
+    /* ---------- password unlock ---------- */
+    function unlockOutput() {
+      const pw = document.getElementById('password').value;
+      if (pw === '0000') {
+        document.getElementById('fullOutput').style.display = 'block';
+        document.getElementById('pwBox').style.display = 'none';
+      } else {
+        alert('Wrong password.');
+      }
+    }
+
+    /* initial render */
+    renderOutput();
+  </script>
 </body>
 </html>
